@@ -21,11 +21,12 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
     .map((msg) => msg.content.toLowerCase())
     .join(" ");
 
-  // Base NPS digest structure
+  // Base NPS digest structure (Datadog “3 pain pillars” context)
   const digest: Partial<Digest> = {
     id: "preview-digest",
-    title: "NPS Analysis - Monthly Report",
-    description: "Monthly Net Promoter Score analysis with segment breakdowns, trends, and actionable insights",
+    title: "NPS Analysis - Datadog Experience (Costs, Complexity, Support)",
+    description:
+      "Monthly Net Promoter Score analysis for Datadog, focusing on high/unpredictable costs, product complexity, and sales/support experience as the three dominant pain pillars.",
     recurrence: "monthly",
     deliveryMethod: "in-app",
     isActive: false,
@@ -34,16 +35,15 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
 
   // Check if user has requested digest creation
   const hasRequestedDigestCreation =
-    conversationText.includes("create") && conversationText.includes("digest") && messageCount >= 6;
+    conversationText.includes("create") && conversationText.includes("digest") && messageCount >= 3;
   const hasRequestedPriorityActions = conversationText.includes("priority") && conversationText.includes("action");
 
-  // If user hasn't requested digest creation yet, return null or early structure
   if (!hasRequestedDigestCreation) {
     return null;
   }
 
   // Build digest with blocks 0-6 when user requests digest creation
-  if (messageCount >= 6) {
+  if (messageCount >= 3) {
     digest.blocks = [
       // Block 0: Executive Summary
       {
@@ -54,7 +54,7 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
         lastExecution: {
           executedAt: new Date(),
           textContent:
-            "January 2025 NPS declined to 47 (down from 48) - our first decrease after six months of growth. Based on 15,247 respondents, root cause analysis reveals two critical issues: search relevance degradation (45.7% of complaints) and corpus gaps (37.8%). Urgent action needed on algorithm rollback and indexing backlog clearance.",
+            "January 2025 Datadog NPS declined to 31 (down from 35), continuing a downward trend in customer sentiment. Analysis of NPS comments, support tickets and public reviews reveals three structural pain pillars: 1) high and unpredictable costs, 2) product complexity and steep learning curve, and 3) aggressive sales tactics combined with poor support follow-through. These three themes account for the vast majority of detractor feedback and are especially pronounced among mid-market and enterprise customers with large footprints.",
         },
       },
       // Block 1: NPS Overview (KPI)
@@ -69,38 +69,38 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
           metrics: [
             {
               name: "Net Promoter Score",
-              value: 47,
-              change: -1.0,
+              value: 31,
+              change: -4.0,
               trend: "down" as const,
-              previousValue: 48,
+              previousValue: 35,
             },
             {
               name: "Promoters",
-              value: 58.2,
-              change: -2.8,
+              value: 41.0,
+              change: -3.5,
               trend: "down" as const,
-              previousValue: 61.0,
+              previousValue: 44.5,
               unit: "%",
             },
             {
               name: "Passives + Detractors",
-              value: 41.8,
-              change: 2.8,
+              value: 59.0,
+              change: 3.5,
               trend: "up" as const,
-              previousValue: 39.0,
+              previousValue: 55.5,
               unit: "%",
               isInverse: true,
             },
             {
-              name: "NPS Forms Completed",
-              value: 15247,
-              change: 10.2,
+              name: "NPS Responses (All Segments)",
+              value: 8324,
+              change: 7.8,
               trend: "up" as const,
-              previousValue: 13835,
+              previousValue: 7722,
             },
           ],
           explanation:
-            "Concerning NPS decline in January with overall score dropping to 47 (down 1.0 point from December's 48). This represents our first month-over-month decrease after six months of consistent growth. Promoter percentage declined to 58.2% (-2.8 percentage points), while combined Passives + Detractors increased to 41.8% (+2.8 points), indicating growing user dissatisfaction. Despite the decline, survey engagement remains strong with 15,247 completed NPS forms (+10.2%), suggesting users are actively providing feedback about their concerns. The high response volume provides statistically significant data for root cause analysis and indicates urgent need for remediation efforts.",
+            "NPS decreased from 35 to 31 in January, with promoters dropping to 41% and Passives + Detractors growing to 59%. Response volume increased by 7.8%, which means more customers are taking the time to express dissatisfaction. Negative comments cluster strongly around costs, complexity, and sales/support, indicating systemic issues rather than isolated incidents.",
         },
       },
       // Block 2: NPS Trend (chart)
@@ -121,21 +121,21 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
         },
         lastExecution: {
           executedAt: new Date(),
-          confidenceScore: 0.92,
+          confidenceScore: 0.9,
           chartData: {
             chartType: "line",
             labels: ["Aug '24", "Sep '24", "Oct '24", "Nov '24", "Dec '24", "Jan '25"],
             datasets: [
               {
-                label: "NPS Score",
-                data: [38.2, 40.1, 41.8, 42.5, 48.0, 47.0],
+                label: "Datadog NPS",
+                data: [40, 38, 37, 36, 35, 31],
                 color: "#3b82f6",
               },
             ],
-            comparisonPeriod: "August 2024 - January 2025",
+            comparisonPeriod: "August 2024 – January 2025",
           },
           explanation:
-            "NPS trajectory shows strong growth from August through December 2024, climbing from 38.2 to a peak of 48.0 (+9.8 points, +25.7% improvement). However, January 2025 marks a concerning reversal with a 1-point decline to 47.0, breaking six months of consecutive gains. The December peak coincided with major platform releases (Citation Network expansion, document annotation enhancements), but January's drop suggests recent changes may have introduced issues. The decline warrants immediate investigation as it contradicts the previously sustained positive momentum and may indicate systematic problems affecting user satisfaction. Root cause analysis points to search algorithm changes deployed December 15th and mobile performance degradation as primary drivers of the downturn.",
+            "NPS has been drifting down gradually from 40 in August to 35 in December, followed by a sharper 4-point drop to 31 in January. The qualitative analysis shows the narrative shifting from feature gaps to frustration with pricing unpredictability, platform complexity, and relationship management (sales/support).",
         },
       },
       // Block 3: Understanding the Decline (text)
@@ -147,94 +147,93 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
         lastExecution: {
           executedAt: new Date(),
           textContent:
-            "To understand January's NPS decline, we analyzed 127 detractor sessions (users who scored 0-6). Our investigation identified five distinct root cause categories driving user dissatisfaction. Each category represents a systematic issue affecting multiple user sessions, with some users experiencing multiple problems in a single interaction. The table below breaks down these categories by frequency, showing which issues are most prevalent among unhappy users.",
+            "To understand why NPS is falling, we analyzed a sample of detractor responses across segments (startups, mid-market, enterprise) and cross-referenced them with tickets, CSM notes, and public reviews. Three themes consistently emerge regardless of company size or maturity: 1) Bills that are higher and harder to predict than expected, 2) A powerful but overwhelming product that requires significant effort to configure, and 3) a perception that Datadog is more focused on selling and closing tickets than on partnering with customers to solve problems.",
         },
       },
       // Block 4: Root Cause Breakdown (table)
       {
         id: "block-nps-4",
         type: "table",
-        title: "Root Cause Breakdown - Detractor Sessions",
+        title: "Root Cause Breakdown – Detractor Feedback",
         order: 4,
         lastExecution: {
           executedAt: new Date(),
-          confidenceScore: 0.91,
+          confidenceScore: 0.9,
           tableData: {
             columns: [
-              { key: "rootCause", label: "Root Cause Category", type: "text", sortable: true },
-              { key: "affectedSessions", label: "Affected Sessions", type: "number", sortable: true },
-              { key: "percentage", label: "% of Detractors", type: "percentage", sortable: true },
-              { key: "severity", label: "Severity", type: "text", sortable: true },
-              { key: "example", label: "Example Issue", type: "text", sortable: false },
+              {
+                key: "rootCause",
+                label: "Root Cause Category",
+                type: "text",
+                sortable: true,
+              },
+              {
+                key: "affectedShare",
+                label: "% of Detractor Comments",
+                type: "percentage",
+                sortable: true,
+              },
+              {
+                key: "severity",
+                label: "Perceived Severity",
+                type: "text",
+                sortable: true,
+              },
+              {
+                key: "example",
+                label: "Representative Feedback",
+                type: "text",
+                sortable: false,
+              },
             ],
             rows: [
               {
                 id: "root-1",
                 cells: {
-                  rootCause: "Search Relevance Degradation",
-                  affectedSessions: 58,
-                  percentage: "45.7%",
+                  rootCause: "High & Unpredictable Costs",
+                  affectedShare: "68%",
                   severity: "Critical",
-                  example: "Query 'jurisprudence contrat travail CDI' returned only 3 results vs 847 in November",
+                  example:
+                    "“Our Datadog bill is insane, basically as much as our infra. Costs jump without us changing much, and the pricing model feels opaque and punishing.”",
                 },
               },
               {
                 id: "root-2",
                 cells: {
-                  rootCause: "Corpus Coverage Gaps",
-                  affectedSessions: 48,
-                  percentage: "37.8%",
+                  rootCause: "Complexity & Steep Learning Curve",
+                  affectedShare: "54%",
                   severity: "High",
-                  example: "Missing Cour de cassation decisions from Jan 15-28 (indexing backlog)",
+                  example:
+                    "“It’s incredibly powerful but the UI is overwhelming. We spend weeks wiring things up and still don’t have dashboards that non-experts can use.”",
                 },
               },
               {
                 id: "root-3",
                 cells: {
-                  rootCause: "Mobile Performance Degradation",
-                  affectedSessions: 41,
-                  percentage: "32.3%",
+                  rootCause: "Aggressive Sales & Poor Support Experience",
+                  affectedShare: "31%",
                   severity: "High",
-                  example: "Search results loading 4.2s on iOS vs 1.8s in December",
-                },
-              },
-              {
-                id: "root-4",
-                cells: {
-                  rootCause: "Legislative Timeline Bugs",
-                  affectedSessions: 29,
-                  percentage: "22.8%",
-                  severity: "Medium",
-                  example: "Null pointer exception on Code civil Article L1234-5 timeline queries",
-                },
-              },
-              {
-                id: "root-5",
-                cells: {
-                  rootCause: "Navigation Friction",
-                  affectedSessions: 22,
-                  percentage: "17.3%",
-                  severity: "Medium",
-                  example: "Users averaging 8.2 failed search attempts before abandonment",
+                  example:
+                    "“Sales spammed us for weeks, and when we finally had a billing issue, support just tried to close the ticket instead of owning the problem.”",
                 },
               },
             ],
-            totalRows: 5,
+            totalRows: 3,
           },
           explanation:
-            "Root cause analysis of 127 detractor sessions (NPS 0-6) identifies five primary categories of issues. The top two drivers—Search Relevance Degradation (45.7%) and Corpus Coverage Gaps (37.8%)—account for majority of user dissatisfaction. Note: Percentages exceed 100% as users can experience multiple root causes in a single session.",
+            "Most detractor comments fall into three buckets: 68% mention some form of pricing/cost shock, 54% describe product complexity or confusing UX, and 31% complain about sales/support behavior. Many detractors mention more than one theme in the same comment.",
         },
       },
       // Block 5: Deep Dive Analysis (text)
       {
         id: "block-nps-5",
         type: "text",
-        title: "Deep Dive Analysis",
+        title: "Deep Dive: How These Themes Show Up in Practice",
         order: 5,
         lastExecution: {
           executedAt: new Date(),
           textContent:
-            "Building on the root cause categories, we conducted in-depth analysis using session replays, A/B testing, and statistical correlation studies. The findings reveal specific technical issues and their measurable impact on user experience. Search relevance degradation shows a clear 14% precision drop from algorithm changes, while corpus gaps create 2,300 failed searches daily. These aren't just complaints—they're quantifiable platform failures with direct business impact that we can measure and fix.",
+            "Cost complaints typically reference surprise overages, complex licensing (high-water-mark, custom metrics, dual ingest/index charges), and a lack of proactive communication when billing anomalies occur. Complexity complaints point to an overwhelming UI, difficult dashboards/monitors setup, and non-intuitive query DSLs. Sales/support complaints describe pushy outreach, inconsistent guidance on what features will cost, and support interactions that feel focused on closing tickets rather than solving root problems. Together, these paint a picture where customers feel both financially exposed and poorly supported when they need help.",
         },
       },
       // Block 6: Key Findings Summary (table)
@@ -245,65 +244,70 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
         order: 6,
         lastExecution: {
           executedAt: new Date(),
-          confidenceScore: 0.91,
+          confidenceScore: 0.9,
           tableData: {
             columns: [
-              { key: "finding", label: "Finding Category", type: "text", sortable: false },
-              { key: "detail", label: "Key Detail", type: "text", sortable: false },
-              { key: "impact", label: "Impact/Data", type: "text", sortable: false },
+              {
+                key: "finding",
+                label: "Finding",
+                type: "text",
+                sortable: false,
+              },
+              {
+                key: "detail",
+                label: "Detail",
+                type: "text",
+                sortable: false,
+              },
+              {
+                key: "impact",
+                label: "Impact / Risk",
+                type: "text",
+                sortable: false,
+              },
             ],
             rows: [
               {
                 id: "finding-1",
                 cells: {
-                  finding: "Search Relevance Degradation",
-                  detail: "Dec 15 algorithm changes reduced Code civil query accuracy by 14%",
-                  impact: "58 sessions (45.7%) - Old: 89.3% precision, New: 76.8%",
+                  finding: "Costs Drive Churn Conversations",
+                  detail:
+                    "Many detractor comments explicitly mention evaluating alternatives due to runaway Datadog bills, not product capability gaps.",
+                  impact:
+                    "Direct threat to renewal and expansion; perception that monitoring costs can exceed infra costs undermines long-term stickiness.",
                 },
               },
               {
                 id: "finding-2",
                 cells: {
-                  finding: "Corpus Coverage Gaps",
-                  detail: "15,247-doc backlog affecting Cour de cassation decisions (Jan 15-28)",
-                  impact: "48 sessions (37.8%) - 2,300 daily failed searches, 73% abandon rate",
+                  finding: "Complexity Limits Adoption Beyond Experts",
+                  detail:
+                    "Teams struggle to make Datadog useful for non-experts; dashboards remain “for SREs only”, limiting perceived value at the org level.",
+                  impact:
+                    "Reduces realized value and makes high spend harder to justify to leadership, especially when only a small group truly benefits.",
                 },
               },
               {
                 id: "finding-3",
                 cells: {
-                  finding: "Session Behavior Pattern",
-                  detail: "Frustrated users average 8.2 failed searches before giving up",
-                  impact: "43 sessions analyzed - repeated query reformulation attempts",
-                },
-              },
-              {
-                id: "finding-4",
-                cells: {
-                  finding: "Power User Impact",
-                  detail: "Detractors conduct 3.2x more searches than average (14.8 vs 4.6)",
-                  impact: "Most valuable segment hitting platform limitations",
-                },
-              },
-              {
-                id: "finding-5",
-                cells: {
-                  finding: "Statistical Correlation",
-                  detail: "Users encountering backlog documents give lower NPS scores",
-                  impact: "4.7x more likely to detract (r=0.73, p<0.01)",
+                  finding: "Relationship Damage from Sales & Support",
+                  detail:
+                    "Stories of aggressive sales outreach and unsatisfying support on billing/technical issues erode trust across engineering and finance.",
+                  impact:
+                    "Once trust is broken, even product improvements struggle to restore goodwill; some customers publicly vow to avoid Datadog in future.",
                 },
               },
             ],
-            totalRows: 5,
+            totalRows: 3,
           },
           explanation:
-            "Structured summary of the five key findings from analyzing 127 detractor sessions, highlighting impact data and statistical evidence.",
+            "The combination of financial pain, operational friction, and damaged trust explains why NPS is sliding despite Datadog’s strong feature set.",
         },
       },
     ];
 
-    // Add blocks 7-8 when user requests priority actions
-    if (messageCount >= 7 && hasRequestedPriorityActions) {
+    // Add Path to Recovery + Priority Actions when user asks for them
+    if (messageCount >= 5 && hasRequestedPriorityActions) {
       digest.blocks.push(
         // Block 7: Path to Recovery (text)
         {
@@ -314,10 +318,10 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
           lastExecution: {
             executedAt: new Date(),
             textContent:
-              "Based on our root cause analysis, we've identified three high-impact actions that address 83.2% of detractor complaints. These recommendations are sequenced by urgency and readiness—the search algorithm rollback can deploy immediately, while indexing and mobile optimizations follow in the next two weeks. Engineering has validated the technical approach for each action, and we project these fixes will recover NPS to the 49-50 range by March 2025. Each recommendation includes specific timelines, expected impact, and current status to enable rapid decision-making.",
+              "To recover NPS, we need a coordinated plan across Pricing, Product, and GTM/Support. The focus should be to (1) make costs understandable and controllable, (2) make common use cases simple and approachable, and (3) rebuild trust through more honest, less aggressive customer interactions. The actions below are prioritized by estimated NPS impact and feasibility over the next 1–2 quarters.",
           },
         },
-        // Block 8: Top 3 Priority Actions (table)
+        // Block 8: Top Priority Actions (table)
         {
           id: "block-nps-8",
           type: "table",
@@ -325,65 +329,93 @@ const buildNPSDigest = (messageCount: number, messages: ChatMessageType[]): Part
           order: 8,
           lastExecution: {
             executedAt: new Date(),
-            confidenceScore: 0.94,
+            confidenceScore: 0.93,
             tableData: {
               columns: [
-                { key: "priority", label: "Priority", type: "text", sortable: false },
-                { key: "action", label: "Recommended Action", type: "text", sortable: false },
-                { key: "timeline", label: "Timeline", type: "text", sortable: false },
-                { key: "impact", label: "Expected Impact", type: "text", sortable: false },
-                { key: "status", label: "Status", type: "text", sortable: false },
+                {
+                  key: "priority",
+                  label: "Priority",
+                  type: "text",
+                  sortable: false,
+                },
+                {
+                  key: "action",
+                  label: "Recommended Action",
+                  type: "text",
+                  sortable: false,
+                },
+                {
+                  key: "owner",
+                  label: "Primary Owner",
+                  type: "text",
+                  sortable: false,
+                },
+                {
+                  key: "timeline",
+                  label: "Timeline",
+                  type: "text",
+                  sortable: false,
+                },
+                {
+                  key: "impact",
+                  label: "Expected Impact",
+                  type: "text",
+                  sortable: false,
+                },
               ],
               rows: [
                 {
                   id: "rec-1",
                   cells: {
                     priority: "🔴 URGENT",
-                    action: "Rollback search algorithm to November baseline",
-                    timeline: "Immediate (24-48 hours)",
-                    impact: "Restore search precision to 89.3% - affects 58 sessions (45.7%)",
-                    status: "Ready to deploy",
+                    action:
+                      "Introduce clear cost guardrails and transparent usage-to-bill mapping (budgets, alerts, and simpler pricing explanations).",
+                    owner: "Pricing & Product",
+                    timeline: "Design in 1 sprint, rollout in next billing cycle",
+                    impact:
+                      "Directly addresses 68% of detractor complaints around high/unpredictable costs; reduces bill shock and restores financial trust.",
                   },
                 },
                 {
                   id: "rec-2",
                   cells: {
                     priority: "🟠 HIGH",
-                    action: "Accelerate indexing backlog clearance to 2-week timeline",
-                    timeline: "Complete by Feb 15",
-                    impact: "Resolve 2,300 daily failed searches - affects 48 sessions (37.8%)",
-                    status: "Resources allocated",
+                    action:
+                      "Ship opinionated ‘quick start’ experience and templates for core monitoring use cases to reduce perceived complexity.",
+                    owner: "Product & UX",
+                    timeline: "2–3 sprints for initial templates; iterate monthly",
+                    impact:
+                      "Targets 54% of detractors who struggle to configure Datadog; makes value visible faster for new teams and non-experts.",
                   },
                 },
                 {
                   id: "rec-3",
                   cells: {
                     priority: "🟠 HIGH",
-                    action: "Deploy mobile performance optimization patch",
-                    timeline: "Feb 3-5 deployment",
-                    impact: "Reduce load time from 4.2s to 1.8s - affects 41 sessions (32.3%)",
-                    status: "Tested in staging",
+                    action:
+                      "Rewrite sales and support playbooks to emphasize transparency, proactive communication on billing, and problem ownership.",
+                    owner: "Sales, CS & Support",
+                    timeline: "Pilot within 1 quarter; full rollout the next",
+                    impact:
+                      "Addresses 31% of detractor feedback on aggressive sales and poor support; critical for rebuilding long-term relationship trust.",
                   },
                 },
               ],
               totalRows: 3,
             },
             explanation:
-              "Three highest-impact recommendations based on root cause analysis. Implementing these actions addresses 83.2% of detractor complaints and is projected to recover NPS to 49-50 range by March 2025.",
+              "These actions directly map to the three dominant pain pillars: costs, complexity, and sales/support. Each has a clear owner, timeline, and measurable impact on detractor themes.",
           },
         },
       );
     }
-
-    return digest;
   }
 
-  return null;
+  return digest;
 };
 
 // Helper function to build digest based on conversation progress
 const buildDigestFromMessages = (messages: ChatMessageType[]): Partial<Digest> | null => {
-  // Count user messages to determine progress
   const userMessages = messages.filter((msg) => msg.role === "user");
   const messageCount = userMessages.length;
 

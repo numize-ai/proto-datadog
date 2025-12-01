@@ -88,8 +88,8 @@ export const SUGGESTED_QUERIES: SuggestedQuery[] = [
     icon: "Activity",
   },
   {
-    id: "doctrine-nps-1",
-    text: "Diagnose low NPS drivers from Doctrine user sessions (detractors, last month)",
+    id: "datadog-nps-1",
+    text: "Diagnose low NPS drivers from Datadog org sessions (detractors, last month)",
     category: "single-source",
     dataSources: ["Product Analytics"],
     requiredSources: [],
@@ -372,195 +372,139 @@ export const MOCK_RESPONSES: Record<string, Omit<ChatMessage, "id" | "role" | "t
       },
     ],
   },
-  // Doctrine NPS Analysis Conversation Flow
-  "diagnose low nps drivers from doctrine user sessions (detractors, last month)": {
+  // Datadog NPS Analysis Conversation Flow
+  "diagnose low nps drivers from datadog org sessions (detractors, last month)": {
     content:
-      "I found ~600,000 user sessions from last month. Let me analyze 100 randomly sampled sessions from detractors (NPS < 7). This sample size provides statistical significance (~95% confidence level, ±10% margin of error) for identifying key patterns. I'll examine search behavior, navigation flows, document interactions, and error patterns to diagnose root causes driving low NPS scores.",
+      "I've analyzed **1,247 user verbatims from last month** (NPS detractor comments, support tickets, and CSM notes). The analysis reveals three dominant pain pillars driving low NPS: **1) High & Unpredictable Costs** (68% of detractor feedback), **2) Product Complexity & Steep Learning Curve** (54%), and **3) Aggressive Sales & Poor Support Experience** (31%). Let me break down the sentiment analysis:",
     type: "table",
     dataSources: [
       {
-        id: "product-analytics",
-        name: "Product Analytics",
+        id: "customer-feedback",
+        name: "Customer Feedback & Sentiment",
         icon: "/dbt.png",
-        tablesUsed: [
-          "analytics.user_sessions",
-          "analytics.search_events",
-          "analytics.navigation_flows",
-          "analytics.error_logs",
-        ],
+        tablesUsed: ["feedback.nps_responses", "support.tickets", "sales.csm_notes", "external.reviews"],
       },
     ],
     reasoningSteps: [
       {
         id: "step1",
         step: 1,
-        title: "Load and validate session sample",
-        description: "Extract 100 random sessions from detractors (NPS < 7) from ~600k total sessions last month",
+        title: "Collect and aggregate detractor feedback",
+        description: "Gather NPS responses (score < 7), support tickets, and CSM notes from last month",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `WITH total_sessions AS (
-  SELECT COUNT(DISTINCT session_id) as total_count
-  FROM analytics.user_sessions
-  WHERE session_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-    AND session_date < DATE_TRUNC('month', CURRENT_DATE)
-),
-detractor_sessions AS (
-  SELECT COUNT(DISTINCT session_id) as detractor_count
-  FROM analytics.user_sessions
-  WHERE session_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-    AND session_date < DATE_TRUNC('month', CURRENT_DATE)
+        dataSource: "Customer Feedback & Sentiment",
+        sqlQuery: `WITH detractor_feedback AS (
+  SELECT
+    response_id,
+    customer_id,
+    nps_score,
+    comment_text,
+    'nps_survey' as source,
+    response_date as feedback_date
+  FROM feedback.nps_responses
+  WHERE response_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+    AND response_date < DATE_TRUNC('month', CURRENT_DATE)
     AND nps_score < 7
+    AND comment_text IS NOT NULL
+  UNION ALL
+  SELECT
+    ticket_id,
+    customer_id,
+    NULL as nps_score,
+    ticket_description,
+    'support_ticket' as source,
+    created_at as feedback_date
+  FROM support.tickets
+  WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+    AND sentiment_score < 0.3
+  UNION ALL
+  SELECT
+    note_id,
+    customer_id,
+    NULL as nps_score,
+    note_content,
+    'csm_note' as source,
+    created_at as feedback_date
+  FROM sales.csm_notes
+  WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+    AND note_type = 'detractor_feedback'
 )
-SELECT
-  s.session_id,
-  s.user_id,
-  s.session_date,
-  s.session_duration_seconds,
-  s.nps_score,
-  s.search_count,
-  s.click_count,
-  s.document_views,
-  s.error_count,
-  (SELECT total_count FROM total_sessions) as total_sessions_last_month,
-  (SELECT detractor_count FROM detractor_sessions) as detractor_sessions_count
-FROM analytics.user_sessions s
-WHERE s.session_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-  AND s.session_date < DATE_TRUNC('month', CURRENT_DATE)
-  AND s.nps_score < 7
-  AND s.nps_score IS NOT NULL
-ORDER BY RANDOM()
-LIMIT 100;`,
+SELECT * FROM detractor_feedback
+ORDER BY feedback_date DESC;`,
       },
       {
         id: "step2",
         step: 2,
-        title: "Categorize sessions by NPS score",
-        description: "Analyze detractor sessions (NPS < 7) and categorize by specific score ranges",
+        title: "Apply semantic analysis to categorize themes",
+        description: "Use LLM to read each verbatim and categorize into pain pillars (cost, complexity, sales/support)",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `WITH sampled_sessions AS (
-  SELECT * FROM analytics.user_sessions
-  WHERE session_id IN (/* 100 sampled session IDs */)
-    AND nps_score < 7
-)
-SELECT
-  CASE
-    WHEN nps_score BETWEEN 0 AND 6 THEN 'Detractors'
-  END as nps_category,
-  COUNT(*) as session_count,
-  ROUND(AVG(session_duration_seconds), 1) as avg_duration_sec,
-  ROUND(AVG(search_count), 1) as avg_searches,
-  ROUND(AVG(click_count), 1) as avg_clicks,
-  ROUND(AVG(error_count), 2) as avg_errors
-FROM sampled_sessions
-GROUP BY nps_category
-ORDER BY MIN(nps_score);`,
       },
       {
         id: "step3",
         step: 3,
-        title: "Analyze search quality and relevance",
-        description: "Examine search queries, result click-through rates, and null result frequency",
+        title: "Extract representative quotes for each theme",
+        description: "Identify the most impactful and representative customer quotes that exemplify each pain pillar",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `SELECT
-  se.session_id,
-  COUNT(se.search_id) as total_searches,
-  COUNT(CASE WHEN se.results_count = 0 THEN 1 END) as null_results,
-  ROUND(
-    COUNT(CASE WHEN se.results_count = 0 THEN 1 END) * 100.0 /
-    NULLIF(COUNT(se.search_id), 0), 1
-  ) as null_result_rate,
-  ROUND(AVG(se.first_click_position), 1) as avg_click_position,
-  COUNT(CASE WHEN se.first_click_position IS NULL THEN 1 END) as searches_without_click
-FROM analytics.search_events se
-WHERE se.session_id IN (/* 100 sampled session IDs */)
-GROUP BY se.session_id;`,
       },
       {
         id: "step4",
         step: 4,
-        title: "Map navigation and UX friction points",
-        description: "Identify common page sequences, back-button usage, and abandonment patterns",
+        title: "Analyze patterns across customer segments",
+        description:
+          "Identify whether pain pillars vary by customer segment (startup, mid-market, enterprise) and ARR band",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `WITH navigation_patterns AS (
-  SELECT
-    nf.session_id,
-    nf.page_sequence,
-    nf.back_button_count,
-    nf.reload_count,
-    nf.pages_visited,
-    CASE
-      WHEN nf.exit_page = '/search' AND nf.session_duration_seconds < 30 THEN 'Quick abandonment'
-      WHEN nf.back_button_count > 5 THEN 'High friction navigation'
-      WHEN nf.reload_count > 2 THEN 'Repeated page reloads'
-      ELSE 'Normal navigation'
-    END as friction_indicator
-  FROM analytics.navigation_flows nf
-  WHERE nf.session_id IN (/* 100 sampled session IDs */)
-)
-SELECT
-  friction_indicator,
-  COUNT(*) as occurrence_count,
-  ROUND(AVG(back_button_count), 1) as avg_back_count,
-  ROUND(AVG(session_duration_seconds), 1) as avg_session_duration
-FROM navigation_patterns
-GROUP BY friction_indicator
-ORDER BY occurrence_count DESC;`,
       },
       {
         id: "step5",
         step: 5,
-        title: "Correlate issues with NPS scores",
-        description: "Cross-reference identified issues with NPS categories to find causal patterns",
+        title: "Calculate theme prevalence and severity",
+        description:
+          "Quantify how frequently each pain pillar appears and correlate with NPS score severity and churn risk",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `SELECT
-  s.nps_category,
-  AVG(CASE WHEN se.null_result_rate > 30 THEN 1 ELSE 0 END) as pct_high_null_results,
-  AVG(CASE WHEN el.error_count > 0 THEN 1 ELSE 0 END) as pct_with_errors,
-  AVG(CASE WHEN nf.friction_indicator != 'Normal navigation' THEN 1 ELSE 0 END) as pct_friction,
-  AVG(CASE WHEN s.session_duration_seconds < 60 THEN 1 ELSE 0 END) as pct_short_sessions
-FROM sampled_sessions s
-LEFT JOIN search_quality se ON s.session_id = se.session_id
-LEFT JOIN error_logs el ON s.session_id = el.session_id
-LEFT JOIN navigation_patterns nf ON s.session_id = nf.session_id
-GROUP BY s.nps_category;`,
       },
     ],
     tableData: {
-      title: "Detractor Sessions - NPS Distribution and Key Metrics (100 Sessions, NPS < 7)",
+      title: "Detractor Feedback Analysis - Pain Pillar Distribution",
       columns: [
-        { key: "category", label: "NPS Category", sortable: true },
-        { key: "count", label: "Sessions", sortable: true },
-        { key: "percentage", label: "% of Sample", sortable: true },
-        { key: "avgDuration", label: "Avg Duration (sec)", sortable: true },
-        { key: "avgSearches", label: "Avg Searches", sortable: true },
-        { key: "avgErrors", label: "Avg Errors", sortable: true },
+        { key: "theme", label: "Pain Pillar", sortable: true },
+        { key: "percentage", label: "% of Detractor Feedback", sortable: true },
+        { key: "severity", label: "Severity", sortable: true },
+        { key: "example", label: "Representative Quote", sortable: false },
       ],
       rows: [
         {
-          category: "Detractors (0-6)",
-          count: 100,
-          percentage: "100%",
-          avgDuration: 142.3,
-          avgSearches: 4.2,
-          avgErrors: 1.8,
+          theme: "High & Unpredictable Costs",
+          percentage: "68%",
+          severity: "Critical",
+          example: '"Our Datadog bill is insane, basically as much as our infra. Costs jump without us changing much."',
+        },
+        {
+          theme: "Complexity & Steep Learning Curve",
+          percentage: "54%",
+          severity: "High",
+          example:
+            '"Incredibly powerful but the UI is overwhelming. We spend weeks wiring things up and still don\'t have dashboards non-experts can use."',
+        },
+        {
+          theme: "Aggressive Sales & Poor Support",
+          percentage: "31%",
+          severity: "High",
+          example:
+            '"Sales spammed us for weeks, and when we had a billing issue, support just tried to close the ticket instead of owning it."',
         },
       ],
     },
     actions: [
       {
-        id: "view-detractor-sessions",
-        label: "View Unsatisfied User Session Details",
+        id: "view-detractor-feedback",
+        label: "View All Detractor Comments",
         icon: "Eye",
         type: "view",
         variant: "default",
       },
       {
-        id: "export-analysis",
-        label: "Export Full Analysis",
+        id: "export-sentiment-analysis",
+        label: "Export Sentiment Analysis",
         icon: "Download",
         type: "export",
         variant: "outline",
@@ -570,196 +514,122 @@ GROUP BY s.nps_category;`,
 
   "what are the main root causes for the detractors?": {
     content:
-      "I've identified 5 primary root cause categories affecting Detractors (100 sessions). The analysis reveals that **search relevance issues** (affecting 58% of detractors) and **corpus coverage gaps** (affecting 52%) are the dominant problems, followed by UX friction and performance issues.",
+      "Based on the sentiment analysis, the three pain pillars break down into more specific sub-themes. Let me show you the detailed breakdown of how customers describe each pain point and what's driving the frustration:",
     type: "table",
     dataSources: [
       {
-        id: "product-analytics",
-        name: "Product Analytics",
+        id: "customer-feedback",
+        name: "Customer Feedback & Sentiment",
         icon: "/dbt.png",
-        tablesUsed: [
-          "analytics.search_events",
-          "analytics.error_logs",
-          "analytics.navigation_flows",
-          "analytics.performance_metrics",
-        ],
+        tablesUsed: ["feedback.nps_responses", "support.tickets", "sales.csm_notes", "external.reviews"],
       },
     ],
     reasoningSteps: [
       {
         id: "step1",
         step: 1,
-        title: "Identify search relevance problems",
-        description: "Detect null results, low CTR, and irrelevant result patterns",
+        title: "Break down cost-related complaints",
+        description:
+          "Use LLM to analyze verbatims tagged as 'cost' and identify specific sub-themes (bill shock, pricing opacity, absolute cost level, custom metrics charges)",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `WITH detractor_sessions AS (
-  SELECT session_id FROM analytics.user_sessions
-  WHERE nps_score BETWEEN 0 AND 6
-    AND session_id IN (/* 100 sampled IDs */)
-)
-SELECT
-  s.session_id,
-  COUNT(CASE WHEN se.results_count = 0 THEN 1 END) as null_searches,
-  COUNT(CASE WHEN se.first_click_position IS NULL AND se.results_count > 0 THEN 1 END) as no_click_searches,
-  CASE
-    WHEN COUNT(CASE WHEN se.results_count = 0 THEN 1 END) >= 2 THEN 'Search Relevance Issue'
-    WHEN COUNT(CASE WHEN se.first_click_position IS NULL AND se.results_count > 0 THEN 1 END) >= 3 THEN 'Search Relevance Issue'
-    ELSE NULL
-  END as root_cause
-FROM detractor_sessions ds
-JOIN analytics.search_events se ON ds.session_id = se.session_id
-GROUP BY s.session_id
-HAVING root_cause IS NOT NULL;`,
       },
       {
         id: "step2",
         step: 2,
-        title: "Detect corpus coverage gaps",
-        description: "Analyze search queries that returned zero results for legal domain patterns",
+        title: "Break down complexity complaints",
+        description:
+          "Use LLM to analyze verbatims tagged as 'complexity' and identify specific sub-themes (UI overwhelm, steep learning curve, configuration difficulty, query language complexity)",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `SELECT
-  se.query_text,
-  se.legal_domain,
-  COUNT(DISTINCT se.session_id) as affected_sessions,
-  CASE
-    WHEN se.legal_domain IN ('droit social', 'droit fiscal', 'droit pénal')
-      AND se.results_count = 0 THEN 'Corpus Coverage Gap'
-    ELSE NULL
-  END as root_cause
-FROM analytics.search_events se
-WHERE se.session_id IN (/* Detractor session IDs */)
-  AND se.results_count = 0
-GROUP BY se.query_text, se.legal_domain, root_cause
-HAVING root_cause IS NOT NULL
-ORDER BY affected_sessions DESC;`,
       },
       {
         id: "step3",
         step: 3,
-        title: "Identify UX friction patterns",
-        description: "Find navigation issues, excessive back-button usage, and confusion signals",
+        title: "Break down sales/support complaints",
+        description:
+          "Use LLM to analyze verbatims tagged as 'sales_support' and identify specific sub-themes (aggressive tactics, ticket closure issues, poor billing support, inconsistent information)",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `SELECT
-  nf.session_id,
-  nf.back_button_count,
-  nf.reload_count,
-  nf.pages_visited,
-  nf.session_duration_seconds,
-  CASE
-    WHEN nf.back_button_count > 8 THEN 'UX Friction - Excessive Navigation'
-    WHEN nf.reload_count > 3 THEN 'UX Friction - Page Reloading'
-    WHEN nf.pages_visited < 3 AND nf.session_duration_seconds < 45 THEN 'UX Friction - Quick Abandonment'
-    ELSE NULL
-  END as root_cause
-FROM analytics.navigation_flows nf
-WHERE nf.session_id IN (/* Detractor session IDs */)
-HAVING root_cause IS NOT NULL;`,
-      },
-      {
-        id: "step4",
-        step: 4,
-        title: "Analyze performance and error issues",
-        description: "Detect slow page loads, timeouts, and technical errors",
-        status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `SELECT
-  pm.session_id,
-  pm.avg_page_load_ms,
-  el.error_type,
-  COUNT(el.error_id) as error_count,
-  CASE
-    WHEN pm.avg_page_load_ms > 3000 THEN 'Performance Issue - Slow Loading'
-    WHEN el.error_type IN ('timeout', '500', 'network_error') THEN 'Technical Error'
-    ELSE NULL
-  END as root_cause
-FROM analytics.performance_metrics pm
-LEFT JOIN analytics.error_logs el ON pm.session_id = el.session_id
-WHERE pm.session_id IN (/* Detractor session IDs */)
-GROUP BY pm.session_id, pm.avg_page_load_ms, el.error_type, root_cause
-HAVING root_cause IS NOT NULL;`,
-      },
-      {
-        id: "step5",
-        step: 5,
-        title: "Categorize and quantify all root causes",
-        description: "Aggregate findings into distinct categories with frequency counts",
-        status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `WITH all_root_causes AS (
-  SELECT session_id, 'Search Relevance' as category FROM search_issues
-  UNION ALL
-  SELECT session_id, 'Corpus Coverage Gap' as category FROM coverage_gaps
-  UNION ALL
-  SELECT session_id, 'UX Friction' as category FROM ux_friction
-  UNION ALL
-  SELECT session_id, 'Performance Issue' as category FROM performance_issues
-  UNION ALL
-  SELECT session_id, 'Technical Error' as category FROM technical_errors
-)
-SELECT
-  category,
-  COUNT(DISTINCT session_id) as affected_sessions,
-  ROUND(COUNT(DISTINCT session_id) * 100.0 / 100, 1) as pct_of_detractors
-FROM all_root_causes
-GROUP BY category
-ORDER BY affected_sessions DESC;`,
       },
     ],
     tableData: {
-      title: "Root Cause Analysis - Detractors (100 Sessions)",
+      title: "Detailed Root Cause Breakdown - Sub-themes Within Each Pain Pillar",
       columns: [
-        { key: "rootCause", label: "Root Cause Category", sortable: true },
-        { key: "affectedSessions", label: "Affected Sessions", sortable: true },
-        { key: "percentage", label: "% of Detractors", sortable: true },
-        { key: "example", label: "Example Issue", sortable: false },
+        { key: "pillar", label: "Pain Pillar", sortable: true },
+        { key: "subTheme", label: "Specific Sub-Theme", sortable: true },
+        { key: "percentage", label: "% of Comments", sortable: true },
+        { key: "example", label: "Representative Quote", sortable: false },
       ],
       rows: [
         {
-          rootCause: "Search Relevance",
-          affectedSessions: 42,
-          percentage: "72.4%",
-          example: "Query 'jurisprudence contrat travail' → 0 results",
+          pillar: "High & Unpredictable Costs",
+          subTheme: "Bill Shock / Unpredictability",
+          percentage: "42%",
+          example: '"Costs jumped 3x in one month with minimal usage changes. We had no warning."',
         },
         {
-          rootCause: "Corpus Coverage Gap",
-          affectedSessions: 38,
-          percentage: "65.5%",
-          example: "Missing recent decisions in 'droit fiscal' domain",
+          pillar: "High & Unpredictable Costs",
+          subTheme: "Pricing Model Opacity",
+          percentage: "38%",
+          example:
+            '"The pricing page is incomprehensible. Custom metrics, indexed logs, dual billing - it\'s impossible to forecast."',
         },
         {
-          rootCause: "UX Friction",
-          affectedSessions: 31,
-          percentage: "53.4%",
-          example: "Avg 12 back-button clicks per session",
+          pillar: "High & Unpredictable Costs",
+          subTheme: "Absolute Cost Level",
+          percentage: "34%",
+          example: '"Our Datadog bill is as expensive as our entire AWS infrastructure. That feels wrong."',
         },
         {
-          rootCause: "Performance Issue",
-          affectedSessions: 18,
-          percentage: "31.0%",
-          example: "Search results loading >4s on mobile",
+          pillar: "Complexity & Learning Curve",
+          subTheme: "UI Overwhelm",
+          percentage: "31%",
+          example: '"The interface is incredibly dense. Too many tabs, options, and views. New users are lost."',
         },
         {
-          rootCause: "Onboarding Gap",
-          affectedSessions: 14,
-          percentage: "24.1%",
-          example: "New users (< 3 sessions) struggle with advanced search",
+          pillar: "Complexity & Learning Curve",
+          subTheme: "Configuration Difficulty",
+          percentage: "28%",
+          example: '"It takes weeks to set up basic dashboards and monitors. Not self-serve at all."',
+        },
+        {
+          pillar: "Complexity & Learning Curve",
+          subTheme: "Query Language Complexity",
+          percentage: "22%",
+          example: '"The log query DSL is powerful but cryptic. We need a dedicated person just to write queries."',
+        },
+        {
+          pillar: "Sales & Support Issues",
+          subTheme: "Aggressive Sales Tactics",
+          percentage: "18%",
+          example:
+            '"Sales reps spammed us daily with cold emails and calls. Felt more like a hard sell than a partnership."',
+        },
+        {
+          pillar: "Sales & Support Issues",
+          subTheme: "Support Closing Tickets",
+          percentage: "14%",
+          example:
+            '"We opened a billing question and support marked it resolved without actually helping. Just wanted it off their queue."',
+        },
+        {
+          pillar: "Sales & Support Issues",
+          subTheme: "Inconsistent Information",
+          percentage: "11%",
+          example:
+            "\"Sales told us one price, then the bill was 40% higher. When we asked, they said 'custom metrics weren't included'.\"",
         },
       ],
     },
     actions: [
       {
-        id: "view-search-examples",
-        label: "View Search Relevance Examples",
-        icon: "Search",
+        id: "view-cost-examples",
+        label: "View All Cost Complaints",
+        icon: "DollarSign",
         type: "view",
         variant: "default",
       },
       {
-        id: "export-root-causes",
-        label: "Export Root Cause Details",
+        id: "export-theme-breakdown",
+        label: "Export Theme Breakdown",
         icon: "Download",
         type: "export",
         variant: "outline",
@@ -767,9 +637,9 @@ ORDER BY affected_sessions DESC;`,
     ],
   },
 
-  "show me specific examples from the corpus coverage gaps": {
+  "show me specific examples of cost complaints": {
     content:
-      "I've extracted 15 specific examples of corpus coverage gaps from the 38 affected detractor sessions. These represent actual user queries that returned zero or highly irrelevant results due to missing content in the legal database.",
+      "I've extracted 15 specific examples of observability coverage gaps from the 38 affected detractor sessions. These represent actual user queries that returned zero or highly irrelevant results because telemetry (logs, traces, metrics, RUM) is missing or incomplete for key services.",
     type: "table",
     dataSources: [
       {
@@ -783,18 +653,19 @@ ORDER BY affected_sessions DESC;`,
       {
         id: "step1",
         step: 1,
-        title: "Extract failed search queries",
-        description: "Collect queries with zero results from detractor sessions",
+        title: "Extract failed observability search queries",
+        description:
+          "Collect queries with zero results from detractor sessions that indicate missing telemetry or uninstrumented services",
         status: "completed",
         dataSource: "Product Analytics",
         sqlQuery: `SELECT
   se.session_id,
   se.query_text,
-  se.legal_domain,
+  se.product_area,      -- 'Logs', 'APM', 'RUM', 'Infrastructure'
   se.timestamp,
   se.results_count,
   qi.inferred_intent,
-  qi.expected_document_type
+  qi.expected_signal_type  -- e.g. 'trace', 'log', 'metric', 'rum_event'
 FROM analytics.search_events se
 LEFT JOIN analytics.query_intent qi ON se.search_id = qi.search_id
 WHERE se.session_id IN (/* Detractor IDs with coverage gaps */)
@@ -804,151 +675,148 @@ ORDER BY se.timestamp;`,
       {
         id: "step2",
         step: 2,
-        title: "Categorize gaps by legal domain",
-        description: "Group missing content by domain area to identify systematic gaps",
+        title: "Categorize gaps by product area",
+        description:
+          "Group missing telemetry by product area to identify systematic coverage gaps (e.g., APM-only, Logs missing, no RUM)",
         status: "completed",
         dataSource: "Product Analytics",
         sqlQuery: `SELECT
   qi.user_intent_category,
-  legal_domain,
-  COUNT(DISTINCT session_id) as affected_sessions,
+  se.product_area,
+  COUNT(DISTINCT se.session_id) as affected_sessions,
   STRING_AGG(DISTINCT se.query_text, '", "' ORDER BY se.timestamp LIMIT 3) as example_queries,
-  qi.expected_document_type
+  qi.expected_signal_type
 FROM analytics.search_events se
 LEFT JOIN analytics.query_intent qi ON se.search_id = qi.search_id
 WHERE se.results_count = 0
   AND se.session_id IN (/* Detractor IDs with coverage gaps */)
-GROUP BY qi.user_intent_category, legal_domain, qi.expected_document_type
-ORDER BY affected_sessions DESC, legal_domain;`,
+GROUP BY qi.user_intent_category, se.product_area, qi.expected_signal_type
+ORDER BY affected_sessions DESC, se.product_area;`,
       },
     ],
     tableData: {
-      title: "Corpus Coverage Gap Examples (Top 15 Intent Patterns)",
+      title: "Observability Coverage Gap Examples (Top 15 Intent Patterns)",
       columns: [
         { key: "userIntent", label: "User Intent", sortable: false },
         { key: "exampleQueries", label: "Example Queries", sortable: false },
         { key: "sessions", label: "Affected Sessions", sortable: true },
-        { key: "domain", label: "Legal Domain", sortable: true },
+        { key: "domain", label: "Product Area", sortable: true },
       ],
       rows: [
         {
-          userIntent: "Recent telework jurisprudence (2024)",
+          userIntent: "Investigate p95 latency spike on checkout service in eu-west-3",
           exampleQueries:
-            '"jurisprudence télétravail 2024", "télétravail jurisprudence récente", "arrêts télétravail 2024"',
+            '"service:checkout env:prod latency:p95>500ms", "trace_search checkout eu-west-3", "apm checkout latency spike"',
           sessions: 8,
-          domain: "Droit Social",
+          domain: "APM",
         },
         {
-          userIntent: "Cryptocurrency taxation for individuals",
+          userIntent: "Find 5xx errors from payment provider in last 30 minutes",
           exampleQueries:
-            '"crypto monnaie fiscalité particulier", "impôt crypto actifs", "déclaration fiscale bitcoin"',
+            '"service:payment-gateway status:500 @http.url:/charge", "payment-gateway 5xx env:prod", "error:payment-gateway timeout"',
           sessions: 6,
-          domain: "Droit Fiscal",
+          domain: "Logs",
         },
         {
-          userIntent: "Economic layoff PSE requirements",
+          userIntent: "Correlate frontend JS errors with backend 5xx for checkout page",
           exampleQueries:
-            '"licenciement économique PSE obligations", "plan sauvegarde emploi procédure", "PSE obligations employeur"',
+            '"rum errors checkout AND 5xx backend", "front-end error checkout correlated with api-gateway", "js error + 500 checkout"',
           sessions: 5,
-          domain: "Droit Social",
+          domain: "RUM",
         },
         {
-          userIntent: "Moral harassment statute of limitations",
+          userIntent: "See all traces for slow database queries on orders service",
           exampleQueries:
-            '"condamnation harcèlement moral prescription", "délai prescription harcèlement", "harcèlement moral délai action"',
+            '"service:orders db.statement:SELECT ... duration:>1s", "orders db latency traces", "apm db slow queries orders"',
           sessions: 4,
-          domain: "Droit Pénal",
+          domain: "APM",
         },
         {
-          userIntent: "Non-compete clause validity conditions",
-          exampleQueries:
-            '"clause non-concurrence validité conditions", "validité clause non concurrence", "conditions clause de non-concurrence"',
+          userIntent: "Check host metrics for CPU saturation on Kafka cluster",
+          exampleQueries: '"host:kafka-* cpu.utilization", "kafka cpu > 90%", "kafka brokers metrics cpu saturation"',
           sessions: 4,
-          domain: "Droit Commercial",
+          domain: "Infrastructure",
         },
         {
-          userIntent: "Moral damages for work accidents",
+          userIntent: "View errors by tenant for multi-tenant API",
           exampleQueries:
-            '"indemnisation préjudice moral accident travail", "préjudice moral accident professionnel", "dommages moraux AT"',
+            '"service:multi-tenant-api tenant_id:* error", "tenant errors per customer", "5xx by tenant-id"',
           sessions: 3,
-          domain: "Droit Social",
+          domain: "Logs",
         },
         {
-          userIntent: "Early termination of 3-6-9 commercial lease",
+          userIntent: "Follow end-to-end trace from mobile app to backend",
           exampleQueries:
-            '"bail commercial 3-6-9 résiliation anticipée", "résiliation anticipée bail 3-6-9", "sortie bail commercial avant terme"',
+            '"trace from mobile app to api-gateway", "end-to-end trace mobile checkout", "rum to apm trace correlation"',
           sessions: 3,
-          domain: "Droit Commercial",
+          domain: "APM",
         },
         {
-          userIntent: "Whistleblower protection in private companies",
-          exampleQueries:
-            '"protection lanceur alerte entreprise privée", "lanceur alerte secteur privé", "protection whistleblower entreprise"',
+          userIntent: "See uptime SLO breaches for checkout service",
+          exampleQueries: '"SLO breaches service:checkout", "checkout SLO error budget burn", "error_budget checkout"',
           sessions: 3,
-          domain: "Droit Social",
+          domain: "SLOs",
         },
         {
-          userIntent: "Notary fees for inheritance (2024 rates)",
+          userIntent: "Analyze synthetic test failures by region",
           exampleQueries:
-            '"succession notaire frais barème 2024", "frais notaire succession 2024", "tarif notaire héritage"',
+            '"synthetics failures by region", "checkout synthetic tests eu-west failure", "synthetic monitor errors summary"',
           sessions: 2,
-          domain: "Droit Civil",
+          domain: "Synthetics",
         },
         {
-          userIntent: "Hidden defect claim deadlines in real estate",
+          userIntent: "Check logs for specific customer id during incident",
           exampleQueries:
-            '"vente immobilière vice caché délai recours", "délai action vice caché immobilier", "prescription vice caché vente"',
+            '"@customer.id:1234 error", "logs customer_id:1234 incident", "customer 1234 checkout failure logs"',
           sessions: 2,
-          domain: "Droit Civil",
+          domain: "Logs",
         },
         {
-          userIntent: "Work-related disability dismissal rules",
+          userIntent: "Compare error rate before/after deploy for a given service",
           exampleQueries:
-            '"licenciement inaptitude origine professionnelle", "inaptitude professionnelle licenciement", "licenciement inaptitude travail"',
+            '"deploy:abc123 error rate diff", "errors before and after deploy orders-service", "orders error_rate by deploy_id"',
           sessions: 2,
-          domain: "Droit Social",
+          domain: "APM",
         },
         {
-          userIntent: "Tax law abuse penalties and amounts",
+          userIntent: "See RUM performance by page for checkout funnel",
           exampleQueries:
-            '"abus de droit fiscal sanction montant", "sanction abus droit fiscal", "pénalités abus de droit"',
+            '"rum performance page:/checkout funnel", "checkout LCP and FCP per step", "rum web vitals checkout funnel"',
           sessions: 2,
-          domain: "Droit Fiscal",
+          domain: "RUM",
         },
         {
-          userIntent: "Online sales withdrawal right exceptions",
+          userIntent: "List services without any monitors configured",
           exampleQueries:
-            '"droit rétractation vente distance exception", "exceptions rétractation vente en ligne", "pas de rétractation vente distance"',
+            '"services without monitors", "unmonitored apm services", "no monitors configured services list"',
           sessions: 2,
-          domain: "Droit Commercial",
+          domain: "Monitors",
         },
         {
-          userIntent: "Can employer refuse mutual termination agreement",
-          exampleQueries:
-            '"rupture conventionnelle refus employeur motif", "employeur refuse rupture conventionnelle", "refus rupture conventionnelle légal"',
+          userIntent: "See which logs indexes are ingesting most data",
+          exampleQueries: '"logs index ingestion by volume", "top log indexes by GB", "which index is most expensive"',
           sessions: 1,
-          domain: "Droit Social",
+          domain: "Logs",
         },
         {
-          userIntent: "10-year construction liability time limits",
-          exampleQueries:
-            '"prescription action responsabilité décennale", "délai responsabilité décennale", "prescription décennale construction"',
+          userIntent: "Find high-cardinality tags causing cost issues",
+          exampleQueries: '"high cardinality tags", "top cardinality tags by series", "costly tags list"',
           sessions: 1,
-          domain: "Droit Civil",
+          domain: "Metrics",
         },
       ],
     },
     actions: [
       {
         id: "export-missing-queries",
-        label: "Export All Missing Queries",
+        label: "Export All Missing Telemetry Queries",
         icon: "Download",
         type: "export",
         variant: "outline",
       },
       {
         id: "create-content-backlog",
-        label: "Create Content Backlog",
+        label: "Create Instrumentation Backlog",
         icon: "List",
         type: "export",
         variant: "default",
@@ -956,111 +824,85 @@ ORDER BY affected_sessions DESC, legal_domain;`,
     ],
   },
 
-  "tell me more about the ux friction issues": {
+  "tell me more about the steep learning curve and complexity issues": {
     content:
-      "I've identified **31 detractor sessions (53%)** experiencing UX friction. The patterns show users struggling with navigation, excessive back-button usage, and interface confusion. Here are the main friction points with session counts and specific behavioral signals:",
+      "I've analyzed **54% of detractor verbatims** that mention complexity and learning curve problems. The patterns show users struggling with overwhelming UI, difficult configuration, and cryptic query languages. Here are the specific complexity issues broken down by theme:",
     type: "table",
     dataSources: [
       {
-        id: "product-analytics",
-        name: "Product Analytics",
+        id: "customer-feedback",
+        name: "Customer Feedback & Sentiment",
         icon: "/dbt.png",
-        tablesUsed: ["analytics.ux_friction_patterns", "analytics.user_behavior_signals"],
+        tablesUsed: ["feedback.nps_responses", "support.tickets", "sales.csm_notes"],
       },
     ],
     reasoningSteps: [
       {
         id: "step1",
         step: 1,
-        title: "Identify UX friction patterns",
-        description: "Analyze user behavior signals indicating navigation confusion and interface friction",
+        title: "Analyze complexity-related verbatims",
+        description:
+          "Use LLM to analyze verbatims mentioning complexity, learning curve, configuration difficulty, and UI overwhelm to extract specific patterns and examples",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `WITH friction_signals AS (
-  SELECT
-    session_id,
-    COUNT(*) FILTER (WHERE event_type = 'back_button_click') as back_button_clicks,
-    COUNT(*) FILTER (WHERE event_type = 'search_refinement') as search_refinements,
-    COUNT(*) FILTER (WHERE event_type = 'filter_toggle') as filter_toggles,
-    AVG(time_on_results_page) as avg_time_on_results,
-    COUNT(DISTINCT page_visited) as pages_visited
-  FROM user_events
-  WHERE session_id IN (/* detractor IDs */)
-  GROUP BY session_id
-)
-SELECT
-  CASE
-    WHEN back_button_clicks > 5 THEN 'Excessive back navigation'
-    WHEN search_refinements > 3 THEN 'Search results confusion'
-    WHEN filter_toggles > 8 THEN 'Filter overwhelm'
-    WHEN avg_time_on_results > 45 THEN 'Results page confusion'
-    ELSE 'General navigation issues'
-  END as friction_type,
-  COUNT(*) as session_count,
-  AVG(back_button_clicks) as avg_back_clicks,
-  AVG(search_refinements) as avg_refinements
-FROM friction_signals
-GROUP BY friction_type
-ORDER BY session_count DESC;`,
       },
     ],
     tableData: {
-      title: "UX Friction Patterns (31 sessions affected)",
+      title: "Complexity & Learning Curve Issues (54% of detractor verbatims)",
       columns: [
-        { key: "frictionType", label: "Friction Type", sortable: false },
-        { key: "sessionCount", label: "Sessions", sortable: true },
-        { key: "behaviorSignal", label: "Behavior Signal", sortable: false },
-        { key: "specificExample", label: "Specific Example", sortable: false },
+        { key: "complexityType", label: "Complexity Issue", sortable: false },
+        { key: "percentage", label: "% Mentioning", sortable: true },
+        { key: "customerQuote", label: "Representative Customer Quote", sortable: false },
+        { key: "impact", label: "Impact on Usage", sortable: false },
       ],
       rows: [
         {
-          frictionType: "Search Results Navigation Confusion",
-          sessionCount: 12,
-          behaviorSignal: "Avg 7.2 back-button clicks per session",
-          specificExample:
-            "Users click into a result, immediately return, try another result, return again (repeat pattern 5-10 times)",
+          complexityType: "Overwhelming UI & Information Density",
+          percentage: "31%",
+          customerQuote:
+            '"The interface is incredibly dense. Too many tabs, dropdowns, options everywhere. New team members take weeks just to learn where things are."',
+          impact: "Limits adoption beyond dedicated SRE team; non-technical stakeholders avoid using Datadog",
         },
         {
-          frictionType: "Filter Overwhelm & Unclear Hierarchy",
-          sessionCount: 9,
-          behaviorSignal: "Avg 11.3 filter toggles per session",
-          specificExample:
-            "Users toggle multiple domain filters rapidly (Droit Social → Fiscal → Penal → reset → Social again) without finding desired content",
+          complexityType: "Difficult Initial Configuration",
+          percentage: "28%",
+          customerQuote:
+            '"Setting up our first useful dashboard took 3 weeks and constant Slack messages to our CSM. Not self-serve at all."',
+          impact: "Delays time-to-value; requires significant engineering time for basic setup",
         },
         {
-          frictionType: "Excessive Search Refinement Loop",
-          sessionCount: 8,
-          behaviorSignal: "Avg 4.8 search query refinements",
-          specificExample:
-            "Users refine the same query repeatedly ('jurisprudence licenciement' → 'jurisprudence licenciement 2024' → 'licenciement economique jurisprudence' → abandon)",
+          complexityType: "Cryptic Query Languages (Logs, Metrics, APM)",
+          percentage: "22%",
+          customerQuote:
+            '"The log query DSL is powerful but cryptic. We need a dedicated person who understands the syntax to write any useful queries."',
+          impact: "Creates bottleneck; only 1-2 people per team can write effective queries",
         },
         {
-          frictionType: "Results Page Confusion (Long Dwell Time)",
-          sessionCount: 6,
-          behaviorSignal: "Avg 52 seconds on results page with no clicks",
-          specificExample:
-            "Users stare at results page for extended periods, scroll up/down multiple times, but don't click any results (confusion or overwhelm)",
+          complexityType: "Steep Learning Curve for Advanced Features",
+          percentage: "18%",
+          customerQuote:
+            '"We pay for APM and RUM but barely use them because the learning curve is so steep and documentation assumes expert-level knowledge."',
+          impact: "Underutilization of paid features; customers don't realize full value",
         },
         {
-          frictionType: "Lack of Saved Search / History Features",
-          sessionCount: 5,
-          behaviorSignal: "Users manually re-type identical queries 3+ times",
-          specificExample:
-            "Same complex query typed 3-4 times across the session ('jurisprudence cour de cassation chambre sociale licenciement economique 2023')",
+          complexityType: "Lack of Guided Onboarding / Templates",
+          percentage: "15%",
+          customerQuote:
+            '"Datadog dropped us into an empty dashboard with no guidance. Would be great to have templates or guided setup for common use cases."',
+          impact: "New users struggle to get started; high early-stage frustration",
         },
       ],
     },
     actions: [
       {
-        id: "view-session-recordings",
-        label: "View Session Recordings",
-        icon: "Play",
+        id: "view-complexity-verbatims",
+        label: "View All Complexity Verbatims",
+        icon: "MessageSquare",
         type: "view",
         variant: "default",
       },
       {
-        id: "export-friction-data",
-        label: "Export UX Friction Data",
+        id: "export-complexity-analysis",
+        label: "Export Complexity Analysis",
         icon: "Download",
         type: "export",
         variant: "outline",
@@ -1068,188 +910,72 @@ ORDER BY session_count DESC;`,
     ],
   },
 
-  "give me top 3-5 prioritized product improvement suggestions based on the coverage gaps and ux improvement issues": {
+  "give me top 3 prioritized actions to recover nps": {
     content:
-      "Here are 5 prioritized product improvements focused on **corpus coverage gaps** (38 sessions, 65%) and **UX friction** (31 sessions, 53%), the two most actionable root causes. These improvements are ranked by ROI (impact / effort) to maximize NPS lift. Effort estimates are based on similar past initiatives tracked in GitHub.",
+      "Based on the three pain pillars analysis, here are the top 3 prioritized actions to recover NPS. These directly address **high/unpredictable costs** (68% of detractors), **product complexity** (54%), and **sales/support experience** (31%). Each action has a clear owner, timeline, and measurable impact.",
     type: "table",
     dataSources: [
       {
-        id: "product-analytics",
-        name: "Product Analytics",
+        id: "customer-feedback",
+        name: "Customer Feedback & Sentiment",
         icon: "/dbt.png",
-        tablesUsed: ["analytics.user_sessions", "analytics.search_events", "analytics.navigation_flows"],
-      },
-    ],
-    tools: [
-      {
-        id: "github",
-        name: "GitHub",
-        icon: "/github.png",
-        purpose: "Effort estimation from historical issues and pull requests",
+        tablesUsed: ["feedback.nps_responses", "support.tickets", "sales.csm_notes"],
       },
     ],
     reasoningSteps: [
       {
         id: "step1",
         step: 1,
-        title: "Identify sessions with coverage gaps and UX friction",
+        title: "Map pain pillars to actionable initiatives",
         description:
-          "Analyze raw session data to identify detractors experiencing corpus coverage gaps or UX friction patterns",
+          "Use LLM to analyze the three pain pillars (costs 68%, complexity 54%, sales/support 31%) and identify the most impactful action for each that addresses root causes",
         status: "completed",
-        dataSource: "Product Analytics",
-        sqlQuery: `-- Identify sessions with corpus coverage gaps (detractors with multiple null result searches)
-WITH coverage_gap_sessions AS (
-  SELECT DISTINCT s.session_id
-  FROM analytics.user_sessions s
-  JOIN analytics.search_events se ON s.session_id = se.session_id
-  WHERE s.nps_score < 7
-    AND se.results_count = 0
-    AND se.query_text IS NOT NULL
-  GROUP BY s.session_id
-  HAVING COUNT(*) >= 2  -- At least 2 null result searches
-),
--- Identify sessions with UX friction (detractors with excessive navigation or errors)
-ux_friction_sessions AS (
-  SELECT DISTINCT s.session_id
-  FROM analytics.user_sessions s
-  JOIN analytics.navigation_flows nf ON s.session_id = nf.session_id
-  WHERE s.nps_score < 7
-    AND (nf.back_button_count > 8 OR nf.reload_count > 3 OR nf.tab_switch_count > 10)
-)
-SELECT
-  'Corpus Coverage Gap' as issue_type,
-  COUNT(DISTINCT session_id) as affected_sessions,
-  ROUND(COUNT(DISTINCT session_id) * 100.0 /
-    (SELECT COUNT(DISTINCT session_id) FROM analytics.user_sessions WHERE nps_score < 7), 1) as pct_of_detractors
-FROM coverage_gap_sessions
-UNION ALL
-SELECT
-  'UX Friction' as issue_type,
-  COUNT(DISTINCT session_id) as affected_sessions,
-  ROUND(COUNT(DISTINCT session_id) * 100.0 /
-    (SELECT COUNT(DISTINCT session_id) FROM analytics.user_sessions WHERE nps_score < 7), 1) as pct_of_detractors
-FROM ux_friction_sessions
-ORDER BY affected_sessions DESC;`,
       },
       {
         id: "step2",
         step: 2,
-        title: "Calculate impact metrics for product improvements",
+        title: "Prioritize by impact and feasibility",
         description:
-          "Derive improvement opportunities from session patterns and estimate effort based on GitHub historical data from similar past initiatives",
+          "Use LLM to rank actions by expected NPS lift, percentage of detractors addressed, implementation timeline, and resource requirements",
         status: "completed",
-        dataSource: "Product Analytics, GitHub",
-        sqlQuery: `-- Get effort estimates from similar past initiatives in GitHub
-WITH github_effort_estimates AS (
-  SELECT
-    issue_label,
-    AVG(story_points) as avg_effort_weeks,
-    AVG(actual_completion_days / 7.0) as avg_duration_weeks,
-    COUNT(*) as similar_issues_count
-  FROM github.issues
-  WHERE status = 'closed'
-    AND issue_type IN ('enhancement', 'feature')
-    AND closed_at >= CURRENT_DATE - INTERVAL '12 months'
-  GROUP BY issue_label
-),
--- Calculate impact metrics for coverage gap improvements
-coverage_gap_impact AS (
-  SELECT
-    COUNT(DISTINCT s.session_id) as affected_sessions,
-    COUNT(DISTINCT se.query_text) as unique_failed_queries,
-    AVG(s.session_duration_sec) as avg_session_duration
-  FROM analytics.user_sessions s
-  JOIN analytics.search_events se ON s.session_id = se.session_id
-  WHERE s.nps_score < 7
-    AND se.results_count = 0
-    AND se.query_text IS NOT NULL
-  HAVING COUNT(*) >= 2
-),
--- Calculate impact metrics for UX friction improvements
-ux_friction_impact AS (
-  SELECT
-    COUNT(DISTINCT s.session_id) as affected_sessions,
-    AVG(nf.back_button_count) as avg_back_buttons,
-    AVG(nf.reload_count) as avg_reloads,
-    AVG(s.session_duration_sec) as avg_session_duration
-  FROM analytics.user_sessions s
-  JOIN analytics.navigation_flows nf ON s.session_id = nf.session_id
-  WHERE s.nps_score < 7
-    AND (nf.back_button_count > 8 OR nf.reload_count > 3)
-)
-SELECT
-  'Corpus Coverage' as improvement_area,
-  cgi.affected_sessions,
-  15.0 as estimated_nps_lift_pts,
-  COALESCE(gh.avg_effort_weeks, 5.0) as estimated_effort_weeks,
-  ROUND(cgi.affected_sessions / COALESCE(gh.avg_effort_weeks, 5.0), 1) as roi_score
-FROM coverage_gap_impact cgi
-LEFT JOIN github_effort_estimates gh ON gh.issue_label = 'corpus-expansion'
-UNION ALL
-SELECT
-  'UX Friction' as improvement_area,
-  ufi.affected_sessions,
-  10.0 as estimated_nps_lift_pts,
-  COALESCE(gh.avg_effort_weeks, 2.5) as estimated_effort_weeks,
-  ROUND(ufi.affected_sessions / COALESCE(gh.avg_effort_weeks, 2.5), 1) as roi_score
-FROM ux_friction_impact ufi
-LEFT JOIN github_effort_estimates gh ON gh.issue_label = 'ux-improvement'
-ORDER BY roi_score DESC;`,
       },
     ],
     tableData: {
-      title: "Prioritized Product Improvements - Coverage Gaps & UX Friction (Top 5)",
+      title: "Top 3 Priority Actions to Recover NPS",
       columns: [
-        { key: "priority", label: "#", sortable: true },
-        { key: "improvement", label: "Product Improvement", sortable: false },
-        { key: "addressesRootCause", label: "Addresses", sortable: false },
-        { key: "impactedSessions", label: "Sessions", sortable: true },
-        { key: "estimatedNPSLift", label: "Est. NPS Lift", sortable: true },
-        { key: "effort", label: "Effort", sortable: false },
+        { key: "priority", label: "Priority", sortable: false },
+        { key: "action", label: "Recommended Action", sortable: false },
+        { key: "owner", label: "Primary Owner", sortable: false },
+        { key: "timeline", label: "Timeline", sortable: false },
+        { key: "impact", label: "Expected Impact", sortable: false },
       ],
       rows: [
         {
-          priority: 1,
-          improvement: "Expand legal corpus: Add missing 2023-2024 jurisprudence (Droit Social, Fiscal, Penal)",
-          addressesRootCause: "Coverage Gap",
-          impactedSessions: 38,
-          estimatedNPSLift: "+15-20 pts",
-          effort: "Medium (4-6 weeks)",
+          priority: "🔴 URGENT",
+          action:
+            "Introduce clear cost guardrails and transparent usage-to-bill mapping (budgets, alerts, and simpler pricing explanations).",
+          owner: "Pricing & Product",
+          timeline: "Design in 1 sprint, rollout in next billing cycle",
+          impact:
+            "Directly addresses 68% of detractor complaints around high/unpredictable costs; reduces bill shock and restores financial trust.",
         },
         {
-          priority: 2,
-          improvement: "Implement saved search history & query suggestions (reduce re-typing, enable quick re-runs)",
-          addressesRootCause: "UX Friction",
-          impactedSessions: 31,
-          estimatedNPSLift: "+8-12 pts",
-          effort: "Low (2-3 weeks)",
+          priority: "🟠 HIGH",
+          action:
+            "Ship opinionated 'quick start' experience and templates for core monitoring use cases to reduce perceived complexity.",
+          owner: "Product & UX",
+          timeline: "2–3 sprints for initial templates; iterate monthly",
+          impact:
+            "Targets 54% of detractors who struggle to configure Datadog; makes value visible faster for new teams and non-experts.",
         },
         {
-          priority: 3,
-          improvement:
-            "Redesign search results page: Clearer result hierarchy, improved preview snippets, better visual scanning",
-          addressesRootCause: "UX Friction",
-          impactedSessions: 31,
-          estimatedNPSLift: "+10-14 pts",
-          effort: "Medium (5-6 weeks)",
-        },
-        {
-          priority: 4,
-          improvement:
-            "Simplify domain filter UI: Reduce overwhelm with smart defaults, collapsible categories, filter presets",
-          addressesRootCause: "UX Friction",
-          impactedSessions: 31,
-          estimatedNPSLift: "+6-10 pts",
-          effort: "Low (3-4 weeks)",
-        },
-        {
-          priority: 5,
-          improvement:
-            "Add 'missing content request' workflow: Allow users to request specific jurisprudence/doctrine not in corpus",
-          addressesRootCause: "Coverage Gap",
-          impactedSessions: 38,
-          estimatedNPSLift: "+5-8 pts",
-          effort: "Low (2-3 weeks)",
+          priority: "🟠 HIGH",
+          action:
+            "Rewrite sales and support playbooks to emphasize transparency, proactive communication on billing, and problem ownership.",
+          owner: "Sales, CS & Support",
+          timeline: "Pilot within 1 quarter; full rollout the next",
+          impact:
+            "Addresses 31% of detractor feedback on aggressive sales and poor support; critical for rebuilding long-term relationship trust.",
         },
       ],
     },
@@ -1281,7 +1007,7 @@ ORDER BY roi_score DESC;`,
   // Exchange 1: Create digest from NPS analysis
   "create a digest from this nps analysis": {
     content:
-      "Perfect! I've created an **NPS Analysis - Monthly Report** digest based on our analysis. The digest includes your executive summary, key metrics, trend analysis, and root cause findings. Review the preview below and let me know if you'd like to add anything.",
+      "Perfect! I've created an **NPS Analysis - Datadog Experience (Costs, Complexity, Support)** digest based on the verbatim analysis. The digest includes:\n\n• Executive Summary\n• NPS Overview with trend (6-month view)\n• Understanding the Decline section\n• Root Cause Breakdown table (3 pain pillars with examples)\n• Deep Dive Analysis\n• Key Findings Summary\n\nReview the preview on the right and let me know if you'd like to add anything.",
     type: "text",
     actions: [
       {
@@ -1311,7 +1037,7 @@ ORDER BY roi_score DESC;`,
   // Exchange 2: Add priority actions to digest
   "add the priority actions to the digest": {
     content:
-      "Done! I've added the **Path to Recovery** section and **Top 3 Priority Actions** table to your digest. These actions address 83.2% of detractor complaints. Your digest is now complete and ready to activate with monthly delivery.",
+      "Done! I've added two new sections to your digest:\n\n• **Path to Recovery** - Strategic framing for the coordinated plan across Pricing, Product, and GTM/Support\n• **Top 3 Priority Actions** table - Specific actions with owners, timelines, and expected impact\n\nThese actions directly address the three pain pillars:\n- 🔴 Cost guardrails (68% of detractors)\n- 🟠 Quick start templates (54% complexity complaints)\n- 🟠 Sales/support playbook rewrite (31% relationship issues)\n\nYour digest is now complete and ready to activate with monthly delivery.",
     type: "text",
     actions: [
       {
